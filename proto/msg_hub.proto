@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package msghub;
+
+service MsgHub {
+  // A server-to-client streaming RPC.
+  rpc Attach(Device) returns (stream HubData) {}
+
+  rpc Detach(Device) returns (HubData) {}
+}
+
+message Interface {
+  string name = 1;
+}
+
+message Device {
+  int32 id = 1;
+  string name = 2;
+  repeated Interface interfaces = 3;
+}
+
+message HubData {
+  string message = 1;
+}
