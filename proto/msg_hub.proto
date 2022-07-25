@@ -3,9 +3,7 @@ syntax = "proto3";
 package msghub;
 
 service MsgHub {
-  // A server-to-client streaming RPC.
-  rpc Attach(Device) returns (stream HubData) {}
-
+  rpc Attach(Device) returns (stream HubMessage) {}
   rpc Detach(Device) returns (HubData) {}
 }
 
@@ -21,4 +19,24 @@ message Device {
 
 message HubData {
   string message = 1;
+}
+
+message AstarteSdkType {
+  oneof OneOfAstarteType {
+    double double = 1;
+    int32 int32 = 2;
+  }
+}
+
+enum AstAggregation {
+  INDIVIDUAL = 0;
+  OBJECT = 1;
+}
+
+message HubMessage {
+  string interface= 1;
+  string path= 2;
+
+  AstAggregation aggregation_type = 3;
+  AstarteSdkType data = 4;
 }
