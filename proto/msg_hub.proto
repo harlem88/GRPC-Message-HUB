@@ -9,6 +9,8 @@ service MsgHub {
 
 message Interface {
   string name = 1;
+  int32 major = 2;
+  int32 minor = 3;
 }
 
 message Device {
@@ -36,7 +38,6 @@ enum AstAggregation {
 message HubMessage {
   string interface= 1;
   string path= 2;
-
   AstAggregation aggregation_type = 3;
   AstarteSdkType data = 4;
 }

@@ -1,21 +1,21 @@
-use astarte_sdk::builder::AstarteOptions;
-use astarte_sdk::AstarteSdk;
-use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Instant;
 
-use futures::{Stream, StreamExt, TryFutureExt};
+use astarte_sdk::builder::AstarteOptions;
+use astarte_sdk::types::AstarteType;
+use astarte_sdk::AstarteSdk;
+use structopt::StructOpt;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{mpsc, Mutex};
-use tokio_rustls::rustls::internal::msgs::message::Message;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
-use crate::msg_hub::HubMessage;
 use msg_hub::msg_hub_server::{MsgHub, MsgHubServer};
-use msg_hub::{Device, HubData, Interface};
+use msg_hub::{Device, HubData};
+
+use crate::msg_hub::AstarteSdkType;
+use crate::msg_hub::HubMessage;
 
 pub mod msg_hub {
     tonic::include_proto!("msghub");
@@ -29,6 +29,22 @@ struct Node {
 pub struct MsgHubService {
     nodes: Arc<Mutex<HashMap<i32, Node>>>,
     deviceSDK: AstarteSdk,
+}
+
+#[derive(Debug, StructOpt)]
+struct Cli {
+    // Realm name
+    #[structopt(short, long)]
+    realm: String,
+    // Device id
+    #[structopt(short, long)]
+    device_id: String,
+    // Credentials secret
+    #[structopt(short, long)]
+    credentials_secret: String,
+    // Pairing URL
+    #[structopt(short, long)]
+    pairing_url: String,
 }
 
 #[tonic::async_trait]
@@ -63,19 +79,20 @@ impl MsgHub for MsgHubService {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let Cli {
+        realm,
+        device_id,
+        credentials_secret,
+        pairing_url,
+    } = Cli::from_args();
+
     let addr = "[::1]:10000".parse().unwrap();
 
     println!("Message Hub listening on: {}", addr);
 
-    let mut sdk_options = AstarteOptions::new(
-        "&opts.realm",
-        "&device_id",
-        "&credentials_secret",
-        "&opts.pairing_url",
-    );
-
-    let sdk_options = sdk_options
-        .interface_directory("&opts.interfaces_directory")?
+    let sdk_options = AstarteOptions::new(&realm, &device_id, &credentials_secret, &pairing_url)
+        .interface_directory("./interfaces")?
+        .ignore_ssl_errors()
         .build();
 
     let mut device = AstarteSdk::new(&sdk_options).await?;
@@ -95,28 +112,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(data) => {
                     println!("incoming: {:?}", data);
 
-                    let hub_message = msg_hub::HubMessage {
-                        interface: data.interface.to_owned(),
-                        path: data.path.to_owned(),
-                        aggregation_type: msg_hub::AstAggregation::Individual.into(),
-                        data: Some(msg_hub::AstarteSdkType {
-                            one_of_astarte_type: Some(
-                                msg_hub::astarte_sdk_type::OneOfAstarteType::Int32(33),
-                            ),
-                        }),
-                    };
+                    if let astarte_sdk::Aggregation::Individual(var) = data.data {
+                        let hub_message = msg_hub::HubMessage {
+                            interface: data.interface.to_owned(),
+                            path: data.path.to_owned(),
+                            aggregation_type: msg_hub::AstAggregation::Individual.into(),
+                            data: Some(var.try_into().unwrap()),
+                        };
 
-                    //find which nodes contains the interface
-
-                    let node_guard = nodes.lock().await;
-                    let node = node_guard.get(&123);
-                    if let Some(node) = node {
-                        println!(" Node Found");
-
-                        let result = node.node_channel.send(Ok(hub_message)).await;
-
-                        if result.is_err() {
-                            println!(" Channel closed");
+                        let node_guard = nodes.lock().await;
+                        let node_selected: Vec<&Node> = node_guard
+                            .iter()
+                            .filter(|(id, node)| {
+                                node.device
+                                    .interfaces
+                                    .iter()
+                                    .filter(|iface| iface.name == data.interface)
+                                    .count()
+                                    > 0
+                            })
+                            .map(|(id, node)| node)
+                            .collect();
+                        for node in node_selected {
+                            println!(" Node Found");
+                            let result = node.node_channel.send(Ok(hub_message.clone())).await;
+                            if result.is_err() {
+                                println!(" Channel closed");
+                            }
                         }
                     }
                 }
@@ -128,4 +150,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let serve = Server::builder().add_service(svc).serve(addr).await?;
 
     Ok(())
+}
+
+impl TryFrom<AstarteType> for AstarteSdkType {
+    type Error = String;
+
+    fn try_from(value: AstarteType) -> Result<Self, Self::Error> {
+        let one_of_value = match value {
+            AstarteType::Double(value) => {
+                Ok(msg_hub::astarte_sdk_type::OneOfAstarteType::Double(value))
+            }
+            AstarteType::Integer(value) => {
+                Ok(msg_hub::astarte_sdk_type::OneOfAstarteType::Int32(value))
+            }
+            _ => Err("Can't convert to astarte".to_owned()),
+        };
+
+        Ok(msg_hub::AstarteSdkType {
+            one_of_astarte_type: Some(one_of_value?),
+        })
+    }
 }

@@ -19,7 +19,9 @@ pub mod msg_hub {
 
 async fn run_attach(client: &mut MsgHubClient<Channel>) -> Result<(), Box<dyn Error>> {
     let interfaces = vec![Interface {
-        name: "i1".to_owned(),
+        name: "io.demo.ServerProperties".to_owned(),
+        minor: 0,
+        major: 2,
     }];
     let device = Device {
         id: 123,
