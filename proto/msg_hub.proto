@@ -3,8 +3,9 @@ syntax = "proto3";
 package msghub;
 
 service MsgHub {
-  rpc Attach(Device) returns (stream HubMessage) {}
-  rpc Detach(Device) returns (HubData) {}
+  rpc Attach(NodeIntrospection) returns (stream NodeMessage) {}
+  rpc SendData(NodeMessage) returns (NodeData){}
+  rpc Detach(NodeIntrospection) returns (NodeData) {}
 }
 
 message Interface {
@@ -13,13 +14,11 @@ message Interface {
   int32 minor = 3;
 }
 
-message Device {
-  int32 id = 1;
-  string name = 2;
+message NodeIntrospection {
   repeated Interface interfaces = 3;
 }
 
-message HubData {
+message NodeData {
   string message = 1;
 }
 
@@ -35,7 +34,7 @@ enum AstAggregation {
   OBJECT = 1;
 }
 
-message HubMessage {
+message NodeMessage {
   string interface= 1;
   string path= 2;
   AstAggregation aggregation_type = 3;
